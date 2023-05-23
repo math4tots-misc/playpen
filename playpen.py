@@ -1,6 +1,9 @@
 import tkinter as tk
 import time
-from typing import List, Tuple, Set, Callable, Any, Literal, Union
+from typing import List, Tuple, Set, Callable, Any, Literal, Union, Iterable
+import math
+
+PI = math.pi
 
 COLORS: Tuple[str, ...] = (
     'snow', 'ghost white', 'white smoke', 'gainsboro', 'floral white',
@@ -42,6 +45,7 @@ COLORS: Tuple[str, ...] = (
     'black',
 )
 
+_NO_ARG_HANDLER: Callable[[], None] = lambda: None
 _NOP_HANDLER: Callable[[Any], None] = lambda _: None
 _FRAMES_PER_SECOND = 30
 _NS_PER_FRAME = int(10 ** 9 / _FRAMES_PER_SECOND)
@@ -56,11 +60,13 @@ _height: float = 400
 _key_handler: Callable[['KeyEvent'], None] = _NOP_HANDLER
 _click_handler: Callable[['ClickEvent'], None] = _NOP_HANDLER
 _right_click_handler: Callable[['ClickEvent'], None] = _NOP_HANDLER
+_on_tick_handler: Callable[[], None] = _NO_ARG_HANDLER
 _all_objects: List['Object'] = []
 _root = tk.Tk()
 _collision_set: Set['Ball'] = set()
 _collision_pairs: Set[Tuple[int, int]] = set()
 _tick = 0
+_continue_update = True
 
 _canvas = tk.Canvas(
     _root,
@@ -102,6 +108,11 @@ def on_click(handler: Callable[['ClickEvent'], None]) -> None:
 def on_right_click(handler: Callable[['ClickEvent'], None]) -> None:
     global _right_click_handler
     _right_click_handler = handler
+
+
+def on_tick(handler: Callable[[], None]) -> None:
+    global _on_tick_handler
+    _on_tick_handler = handler
 
 
 def mainloop():
@@ -172,6 +183,10 @@ def mainloop():
     def on_motion(event: 'tk.Event[tk.Misc]') -> None:
         pass
 
+    def on_window_delete():
+        global _continue_update
+        _continue_update = False
+
     _root.bind('<KeyPress>', on_key_event)
     _root.bind('<Button-1>', on_click_event)
     _root.bind('<Button-3>', on_right_click_event)
@@ -179,6 +194,7 @@ def mainloop():
     _root.bind('<B1-Motion>', on_drag)
     _root.bind('<Motion>', on_motion)
     _root.after(0, _update)
+    _root.protocol("WM_DELETE_WINDOW", on_window_delete)
     tk.mainloop()
 
 
@@ -272,30 +288,36 @@ class Object:
         _canvas.lift(self.id)
 
     def contains_point(self, x: float, y: float) -> bool:
-        raise NotImplemented(f"{type(self).__name__}.contains_point")
+        raise NotImplementedError(f"{type(self).__name__}.contains_point")
 
     @property
     def left(self) -> float:
-        raise NotImplemented(f"{type(self).__name__}.left")
+        raise NotImplementedError(f"{type(self).__name__}.left")
 
     @property
     def right(self) -> float:
-        raise NotImplemented(f"{type(self).__name__}.right")
+        raise NotImplementedError(f"{type(self).__name__}.right")
 
     @property
     def top(self) -> float:
-        raise NotImplemented(f"{type(self).__name__}.top")
+        raise NotImplementedError(f"{type(self).__name__}.top")
 
     @property
     def bottom(self) -> float:
-        raise NotImplemented(f"{type(self).__name__}.bottom")
+        raise NotImplementedError(f"{type(self).__name__}.bottom")
 
     def _reset_coords(self) -> None:
-        raise NotImplemented(f"{type(self).__name__}._reset_coords")
+        raise NotImplementedError(f"{type(self).__name__}._reset_coords")
 
     @property
     def position(self) -> 'Vector':
         return Vector(self._x, self._y)
+
+    @position.setter
+    def position(self, new_pos: 'Vector') -> None:
+        self._x = new_pos.x
+        self._y = new_pos.y
+        self._reset_coords()
 
     @property
     def x(self) -> float:
@@ -432,6 +454,52 @@ class Box(_RectangularObject):
         self._height = height
 
 
+class Polygon(_ObjectWithColor):
+    @staticmethod
+    def _compute_coords(
+            pos: 'Vector',
+            points: List['Vector'],
+            angle: float) -> List[float]:
+        ret: List[float] = []
+        center = Vector.sum(points) / len(points)
+        offset = pos - center
+        for point in points:
+            new_point = center.rotate(point, angle) + offset
+            ret.append(new_point.x)
+            ret.append(new_point.y)
+        return ret
+
+    def __init__(
+            self,
+            points: List['Vector']) -> None:
+        center = Vector.sum(points) / len(points)
+        coords = Polygon._compute_coords(center, points, 0)
+        polygon_id = _canvas.create_polygon(
+            coords, fill=_DEFAULT_COLOR_FOR_GEOMTRY)
+        super().__init__(polygon_id, center.x, center.y)
+        self._points = points
+        self._angle = 0
+
+    def _reset_coords(self) -> None:
+        _canvas.coords(self.id, Polygon._compute_coords(
+            self.position,
+            self._points,
+            self._angle))
+
+    @property
+    def angle(self) -> float:
+        return self._angle
+
+    @angle.setter
+    def angle(self, new_angle: float) -> None:
+        self._angle = new_angle
+        self._reset_coords()
+
+    def contains_point(self, x: float, y: float) -> bool:
+        # TODO: IMPLEMENT THIS
+        return False
+
+
 class Ball(_ObjectWithColor):
     def __init__(
             self,
@@ -498,6 +566,13 @@ class PictureFrame(_RectangularObject):
 
 
 class Vector:
+    @staticmethod
+    def sum(vectors: Iterable['Vector']) -> 'Vector':
+        total = Vector(0, 0)
+        for vector in vectors:
+            total += vector
+        return total
+
     def __init__(self, x: float, y: float) -> None:
         self.x = x
         self.y = y
@@ -510,6 +585,9 @@ class Vector:
 
     def __mul__(self, other: float) -> 'Vector':
         return Vector(self.x * other, self.y * other)
+
+    def __truediv__(self, other: float) -> 'Vector':
+        return Vector(self.x / other, self.y / other)
 
     def dot(self, other: 'Vector') -> float:
         return self.x * other.x + self.y * other.y
@@ -527,6 +605,18 @@ class Vector:
 
     def __repr__(self) -> str:
         return f"Vector({self.x}, {self.y})"
+
+    def atan2(self) -> float:
+        return math.atan2(self.y, self.x)
+
+    def rotate(self, point: 'Vector', angle: float) -> 'Vector':
+        if angle == 0:
+            return point
+        point = point - self
+        length = point.len()
+        prior_angle = point.atan2()
+        new_angle = prior_angle + angle
+        return Vector(math.sin(new_angle), math.cos(new_angle)) * length + self
 
 
 def _compute_collision_velocity(
@@ -579,19 +669,35 @@ def _update() -> None:
     global _tick
     start_time_ns = time.time_ns()
 
-    _tick += 1
-    collision_list = tuple(_collision_set)
-    for i in range(len(collision_list) - 1):
-        a = collision_list[i]
-        for j in range(i + 1, len(collision_list)):
-            b = collision_list[j]
-            _update_collision(a, b)
+    try:
+        _on_tick_handler()
+        _tick += 1
+        collision_list = tuple(_collision_set)
+        for i in range(len(collision_list) - 1):
+            a = collision_list[i]
+            for j in range(i + 1, len(collision_list)):
+                b = collision_list[j]
+                _update_collision(a, b)
 
-    for obj in _all_objects:
-        obj.update()
-    end_time_ns = time.time_ns()
-    elapsed_time_ns = end_time_ns - start_time_ns
-    _root.after(round((_NS_PER_FRAME - elapsed_time_ns) // _NS_IN_MS), _update)
+        for obj in _all_objects:
+            obj.update()
+        end_time_ns = time.time_ns()
+        elapsed_time_ns = end_time_ns - start_time_ns
+        _root.after(
+            round((_NS_PER_FRAME - elapsed_time_ns) // _NS_IN_MS), _update)
+    except tk.TclError as e:
+        if str(e) == 'invalid command name ".!canvas"':
+            # Occasionally, when the window is closed the update keeps running
+            # even when some tk resources have been cleaned up.
+            # I'm not sure what the recommended way of handling this is, but
+            # for now, I just have this hack to keep this message from
+            # cluttering stdout.
+            # TODO: Figure out the proper way to handle this error.
+            global _continue_update
+            _continue_update = False
+        else:
+            print("e = {e}")
+            raise
 
 
 def main(body: Callable[[], None]) -> None:
