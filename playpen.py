@@ -1,7 +1,13 @@
 import tkinter as tk
 import time
-from typing import List, Tuple, Set, Callable, Any, Literal, Union, Iterable
+from typing import (
+    List, Tuple, Set, Callable, Any, Literal, Union, Iterable,
+    NamedTuple, Protocol)
 import math
+
+##############################################################################
+# SECTION 0: CONSTANTS AND GLOBAL VARIALBES
+##############################################################################
 
 PI = math.pi
 
@@ -79,6 +85,75 @@ _canvas = tk.Canvas(
 _canvas.pack()
 
 
+##############################################################################
+# SECTION 1: VECTOR
+##############################################################################
+
+
+class _SupportsIndex(Protocol):
+    def __index__(self) -> int: ...
+
+
+class Vector(NamedTuple):
+    x: float
+    y: float
+
+    @staticmethod
+    def sum(vectors: Iterable['Vector']) -> 'Vector':
+        total = Vector(0, 0)
+        for vector in vectors:
+            total += vector
+        return total
+
+    def __add__(self, other: 'Vector') -> 'Vector':
+        return Vector(self.x + other.x, self.y + other.y)
+
+    def __sub__(self, other: 'Vector') -> 'Vector':
+        return Vector(self.x - other.x, self.y - other.y)
+
+    def __mul__(self, other: Union[float, _SupportsIndex]) -> 'Vector':
+        if not isinstance(other, float):
+            other = other.__index__()
+        return Vector(self.x * other, self.y * other)
+
+    def __truediv__(self, other: float) -> 'Vector':
+        return Vector(self.x / other, self.y / other)
+
+    def dot(self, other: 'Vector') -> float:
+        return self.x * other.x + self.y * other.y
+
+    def __iter__(self):
+        yield self.x
+        yield self.y
+
+    def len2(self) -> float:
+        "Returns the square of the length of this vector"
+        return self.x * self.x + self.y * self.y
+
+    def len(self) -> float:
+        return self.len2() ** 0.5
+
+    def __repr__(self) -> str:
+        return f"Vector({self.x}, {self.y})"
+
+    def atan2(self) -> float:
+        return math.atan2(self.y, self.x)
+
+    def rotate(self, point: 'Vector', angle: float) -> 'Vector':
+        if angle == 0:
+            return point
+        point = point - self
+        length = point.len()
+        prior_angle = point.atan2()
+        new_angle = prior_angle + angle
+        return Vector(math.sin(new_angle), math.cos(new_angle)) * length + self
+
+
+##############################################################################
+# SECTION 2: TK AND EVENTS
+##############################################################################
+
+
 def title(title: str) -> None:
     _root.winfo_toplevel().title(title)
 
@@ -92,9 +167,6 @@ def resize(width: int, height: int):
 
 
 def get_screen_size() -> Tuple[float, float]:
-    """
-    Get the width and height of the current window in pixels.
-    """
     return _width, _height
 
 
@@ -189,6 +261,7 @@ def mainloop():
     def on_window_delete():
         global _continue_update
         _continue_update = False
+        _root.destroy()
 
     _root.bind('<KeyPress>', on_key_event)
     _root.bind('<Button-1>', on_click_event)
@@ -367,7 +440,7 @@ class Object:
         self.on_click_handler = new_handler
 
 
-class _ObjectWithColor(Object):
+class ObjectWithColor(Object):
     def __init__(
                 self,
                 id: int,
@@ -386,7 +459,7 @@ class _ObjectWithColor(Object):
         self._color = new_color
 
 
-class _RectangularObject(_ObjectWithColor):
+class RectangularObject(ObjectWithColor):
     def __init__(
             self,
             id: int,
@@ -441,7 +514,7 @@ class _RectangularObject(_ObjectWithColor):
         return self._y + self._height / 2
 
 
-class Box(_RectangularObject):
+class Box(RectangularObject):
     def __init__(
             self,
             x: float, y: float,
@@ -457,7 +530,7 @@ class Box(_RectangularObject):
         self._height = height
 
 
-class Polygon(_ObjectWithColor):
+class Polygon(ObjectWithColor):
     @staticmethod
     def _compute_coords(
             pos: 'Vector',
@@ -503,7 +576,7 @@ class Polygon(_ObjectWithColor):
         return False
 
 
-class Ball(_ObjectWithColor):
+class Ball(ObjectWithColor):
     def __init__(
             self,
             x: float, y: float,
@@ -564,62 +637,8 @@ class Ball(_ObjectWithColor):
         else:
             _collision_set.discard(self)
 
-class PictureFrame(_RectangularObject):
+class PictureFrame(RectangularObject):
     pass
-
-
-class Vector:
-    @staticmethod
-    def sum(vectors: Iterable['Vector']) -> 'Vector':
-        total = Vector(0, 0)
-        for vector in vectors:
-            total += vector
-        return total
-
-    def __init__(self, x: float, y: float) -> None:
-        self.x = x
-        self.y = y
-
-    def __add__(self, other: 'Vector') -> 'Vector':
-        return Vector(self.x + other.x, self.y + other.y)
-
-    def __sub__(self, other: 'Vector') -> 'Vector':
-        return Vector(self.x - other.x, self.y - other.y)
-
-    def __mul__(self, other: float) -> 'Vector':
-        return Vector(self.x * other, self.y * other)
-
-    def __truediv__(self, other: float) -> 'Vector':
-        return Vector(self.x / other, self.y / other)
-
-    def dot(self, other: 'Vector') -> float:
-        return self.x * other.x + self.y * other.y
-
-    def __iter__(self):
-        yield self.x
-        yield self.y
-
-    def len2(self) -> float:
-        "Returns the square of the length of this vector"
-        return self.x * self.x + self.y * self.y
-
-    def len(self) -> float:
-        return self.len2() ** 0.5
-
-    def __repr__(self) -> str:
-        return f"Vector({self.x}, {self.y})"
-
-    def atan2(self) -> float:
-        return math.atan2(self.y, self.x)
-
-    def rotate(self, point: 'Vector', angle: float) -> 'Vector':
-        if angle == 0:
-            return point
-        point = point - self
-        length = point.len()
-        prior_angle = point.atan2()
-        new_angle = prior_angle + angle
-        return Vector(math.sin(new_angle), math.cos(new_angle)) * length + self
 
 
 def _compute_collision_velocity(
