@@ -531,7 +531,7 @@ class Object:
         self.on_click_handler = new_handler
 
 
-class ObjectWithColor(Object):
+class _ObjectWithColor(Object):
     def __init__(
                 self,
                 id: int,
@@ -550,7 +550,7 @@ class ObjectWithColor(Object):
         self._color = new_color
 
 
-class RectangularObject(ObjectWithColor):
+class _RectangularObject(_ObjectWithColor):
     def __init__(
             self,
             id: int,
@@ -605,7 +605,7 @@ class RectangularObject(ObjectWithColor):
         return self._y + self._height / 2
 
 
-class Box(RectangularObject):
+class Box(_RectangularObject):
     def __init__(
             self,
             x: float, y: float,
@@ -621,7 +621,7 @@ class Box(RectangularObject):
         self._height = height
 
 
-class Polygon(ObjectWithColor):
+class Polygon(_ObjectWithColor):
     @staticmethod
     def _compute_coords(
             pos: 'Vector',
@@ -667,7 +667,7 @@ class Polygon(ObjectWithColor):
         return False
 
 
-class Ball(ObjectWithColor):
+class Ball(_ObjectWithColor):
     def __init__(
             self,
             x: float, y: float,
@@ -729,5 +729,5 @@ class Ball(ObjectWithColor):
             _collision_set.discard(self)
 
 
-class PictureFrame(RectangularObject):
+class PictureFrame(_RectangularObject):
     pass
