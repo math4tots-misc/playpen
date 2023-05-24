@@ -92,6 +92,9 @@ def resize(width: int, height: int):
 
 
 def get_screen_size() -> Tuple[float, float]:
+    """
+    Get the width and height of the current window in pixels.
+    """
     return _width, _height
 
 
