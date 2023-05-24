@@ -296,6 +296,97 @@ class ClickEvent:
         self.y = 0
 
 
+def _compute_collision_velocity(
+        m1: float, x1: Vector, v1: Vector,
+        m2: float, x2: Vector, v2: Vector) -> Vector:
+    return v1 - (x1 - x2) * (
+        ((m2 + m2) / (m1 + m2)) *
+        ((v1 - v2).dot(x1 - x2) / (x1 - x2).len2()))
+
+
+def _update_collision(b1: 'Ball', b2: 'Ball') -> None:
+    key = (b1.id, b2.id)
+    dx = b1.x - b2.x
+    dy = b1.y - b2.y
+    rsum = b1.radius + b2.radius
+    rsum2 = rsum * rsum
+    if dx * dx + dy * dy > rsum2:
+        _collision_pairs.discard(key)
+        return
+
+    if key in _collision_pairs:
+        return
+
+    _collision_pairs.add(key)
+
+    # https://en.wikipedia.org/wiki/Elastic_collision
+    # "Two-dimensional collision with two moving objects"
+
+    x1 = b1.position
+    v1 = b1.velocity
+    x2 = b2.position
+    v2 = b2.velocity
+    m1 = b1.radius * b1.radius
+    m2 = b2.radius * b2.radius
+
+    b1.velocity = _compute_collision_velocity(
+        m1, x1, v1,
+        m2, x2, v2)
+    b2.velocity = _compute_collision_velocity(
+        m2, x2, v2,
+        m1, x1, v1)
+
+    # print("COLLISION")
+    # print(f"  MASS {m1}, {m2}")
+    # print(f"  VELOCITY {v1} -> {b1.velocity}")
+    # print(f"  VELOCITY {v2} -> {b2.velocity}")
+
+
+def _update() -> None:
+    global _tick
+    start_time_ns = time.time_ns()
+
+    try:
+        _on_tick_handler()
+        _tick += 1
+        collision_list = tuple(_collision_set)
+        for i in range(len(collision_list) - 1):
+            a = collision_list[i]
+            for j in range(i + 1, len(collision_list)):
+                b = collision_list[j]
+                _update_collision(a, b)
+
+        for obj in _all_objects:
+            obj.update()
+        end_time_ns = time.time_ns()
+        elapsed_time_ns = end_time_ns - start_time_ns
+        _root.after(
+            round((_NS_PER_FRAME - elapsed_time_ns) // _NS_IN_MS), _update)
+    except tk.TclError as e:
+        if str(e) == 'invalid command name ".!canvas"':
+            # Occasionally, when the window is closed the update keeps running
+            # even when some tk resources have been cleaned up.
+            # I'm not sure what the recommended way of handling this is, but
+            # for now, I just have this hack to keep this message from
+            # cluttering stdout.
+            # TODO: Figure out the proper way to handle this error.
+            global _continue_update
+            _continue_update = False
+        else:
+            print("e = {e}")
+            raise
+
+
+def main(body: Callable[[], None]) -> None:
+    body()
+    mainloop()
+
+
+##############################################################################
+# SECTION 3: OBJECT AND SUBCLASSES
+##############################################################################
+
+
 class Object:
     on_click_handler: Union[Callable[['ClickEvent'], None], None]
 
@@ -637,91 +728,6 @@ class Ball(ObjectWithColor):
         else:
             _collision_set.discard(self)
 
+
 class PictureFrame(RectangularObject):
     pass
-
-
-def _compute_collision_velocity(
-        m1: float, x1: Vector, v1: Vector,
-        m2: float, x2: Vector, v2: Vector) -> Vector:
-    return v1 - (x1 - x2) * (
-        ((m2 + m2) / (m1 + m2)) *
-        ((v1 - v2).dot(x1 - x2) / (x1 - x2).len2()))
-
-
-def _update_collision(b1: Ball, b2: Ball) -> None:
-    key = (b1.id, b2.id)
-    dx = b1.x - b2.x
-    dy = b1.y - b2.y
-    rsum = b1.radius + b2.radius
-    rsum2 = rsum * rsum
-    if dx * dx + dy * dy > rsum2:
-        _collision_pairs.discard(key)
-        return
-
-    if key in _collision_pairs:
-        return
-
-    _collision_pairs.add(key)
-
-    # https://en.wikipedia.org/wiki/Elastic_collision
-    # "Two-dimensional collision with two moving objects"
-
-    x1 = b1.position
-    v1 = b1.velocity
-    x2 = b2.position
-    v2 = b2.velocity
-    m1 = b1.radius * b1.radius
-    m2 = b2.radius * b2.radius
-
-    b1.velocity = _compute_collision_velocity(
-        m1, x1, v1,
-        m2, x2, v2)
-    b2.velocity = _compute_collision_velocity(
-        m2, x2, v2,
-        m1, x1, v1)
-
-    # print("COLLISION")
-    # print(f"  MASS {m1}, {m2}")
-    # print(f"  VELOCITY {v1} -> {b1.velocity}")
-    # print(f"  VELOCITY {v2} -> {b2.velocity}")
-
-
-def _update() -> None:
-    global _tick
-    start_time_ns = time.time_ns()
-
-    try:
-        _on_tick_handler()
-        _tick += 1
-        collision_list = tuple(_collision_set)
-        for i in range(len(collision_list) - 1):
-            a = collision_list[i]
-            for j in range(i + 1, len(collision_list)):
-                b = collision_list[j]
-                _update_collision(a, b)
-
-        for obj in _all_objects:
-            obj.update()
-        end_time_ns = time.time_ns()
-        elapsed_time_ns = end_time_ns - start_time_ns
-        _root.after(
-            round((_NS_PER_FRAME - elapsed_time_ns) // _NS_IN_MS), _update)
-    except tk.TclError as e:
-        if str(e) == 'invalid command name ".!canvas"':
-            # Occasionally, when the window is closed the update keeps running
-            # even when some tk resources have been cleaned up.
-            # I'm not sure what the recommended way of handling this is, but
-            # for now, I just have this hack to keep this message from
-            # cluttering stdout.
-            # TODO: Figure out the proper way to handle this error.
-            global _continue_update
-            _continue_update = False
-        else:
-            print("e = {e}")
-            raise
-
-
-def main(body: Callable[[], None]) -> None:
-    body()
-    mainloop()
